@@ -71,12 +71,24 @@ Helpers (`helpers/transcribe.py`, `helpers/render.py`, etc.) live alongside this
 
 ## Helpers
 
+### Core pipeline
+
 - **`transcribe.py <video>`** — single-file Scribe call. `--num-speakers N` optional. Cached.
 - **`transcribe_batch.py <videos_dir>`** — 4-worker parallel transcription. Use for multi-take.
 - **`pack_transcripts.py --edit-dir <dir>`** — `transcripts/*.json` → `takes_packed.md` (phrase-level, break on silence ≥ 0.5s).
 - **`timeline_view.py <video> <start> <end>`** — filmstrip + waveform PNG. On-demand visual drill-down. **Not a scan tool** — use it at decision points, not constantly.
-- **`render.py <edl.json> -o <out>`** — per-segment extract → concat → overlays (PTS-shifted) → subtitles LAST. `--preview` for 720p fast. `--build-subtitles` to generate master.srt inline.
+- **`render.py <edl.json> -o <out>`** — per-segment extract → concat → overlays (PTS-shifted) → subtitles LAST. `--preview` for 1080p fast. `--build-subtitles` to generate master.srt inline.
 - **`grade.py <in> -o <out>`** — ffmpeg filter chain grade. Presets + `--filter '<raw>'` for custom.
+
+### Automated pipeline (script-driven editing)
+
+For projects with a `script.md`, the automated pipeline handles ordering, cutting, captioning, and rendering in one command. See `.claude/skills/edit-pipeline/SKILL.md` for full documentation.
+
+- **`pipeline.py <project_dir>`** — end-to-end orchestrator: transcribe → pack → cut → captions → render. Key options: `--preview`, `--caption-style`, `--caption-mode`, `--transition`, `--grade`, `--accent-color`, `--studio`.
+- **`cut_engine.py <project_dir>`** — script-aligned clip ordering + filler/silence removal + retake deduplication → `edl.json`. Uses fuzzy matching (`difflib.SequenceMatcher`) to align transcripts to script beats.
+- **`captions_hf.py <edl.json>`** — HyperFrames caption generator: word-by-word karaoke captions with 5 style presets (`clean`, `bold-outline`, `pop`, `neon`, `handwritten`), 2 caption modes (`phrase`, `word`), and 8 overlay transition presets (`flash`, `swipe`, `film-burn`, `glare`, `glitch`, `warp`, `stripe-wipe`, `ink`). Renders to ProRes 4444 MOV with alpha transparency.
+
+For manual/conversational editing (no script), use the core pipeline helpers directly and follow the process described below.
 
 For animations, create `<edit>/animations/slot_<id>/` with `Bash` and spawn a sub-agent via the `Agent` tool.
 

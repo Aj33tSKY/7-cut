@@ -13,6 +13,10 @@ Try video-use in [Browser Use Cloud](https://cloud.browser-use.com/v4?utm_campai
 ## What it does
 
 - **Cuts out filler words** (`umm`, `uh`, false starts) and dead space between takes
+- **Script-aligned ordering** — drop clips in any order + a `script.md`; the pipeline reorders by script position using fuzzy matching
+- **Retake deduplication** — single-clip multiple attempts are detected and deduplicated automatically
+- **Animated karaoke captions** — word-by-word highlighting with 5 style presets (CapCut, neon, handwritten, etc.) and phrase or one-word-at-a-time modes
+- **Overlay transitions** — 8 presets (film burn, glitch, glare, warp, swipe, ink, etc.) rendered as transparent overlays at clip boundaries
 - **Auto color grades** every segment (warm cinematic, neutral punch, or any custom ffmpeg chain)
 - **30ms audio fades** at every cut so you never hear a pop
 - **Burns subtitles** in your style — 2-word UPPERCASE chunks by default, fully customizable
@@ -46,6 +50,41 @@ And in the session:
 > edit these into a launch video
 
 It inventories the sources, proposes a strategy, waits for your OK, then produces `edit/final.mp4` next to your sources. All outputs live in `<videos_dir>/edit/` — the skill directory stays clean.
+
+## Automated pipeline (script-driven)
+
+For projects with an actor script, the automated pipeline handles everything in one command:
+
+```bash
+python helpers/pipeline.py /path/to/project --preview
+```
+
+Just put your clips + a `script.md` in a folder. The pipeline:
+1. Transcribes every clip (ElevenLabs Scribe, word-level, cached)
+2. Orders clips by script position using fuzzy matching
+3. Removes fillers, silence, and duplicate retakes
+4. Generates animated karaoke captions with overlay transitions
+5. Renders to `edit/final.mp4`
+
+### Caption styles & transitions
+
+```bash
+# CapCut-style bold outline + film burn transitions (default)
+python helpers/pipeline.py project/ --caption-style bold-outline --transition film-burn
+
+# One-word-at-a-time with neon glow + glitch transitions
+python helpers/pipeline.py project/ --caption-mode word --caption-style neon --transition glitch
+
+# Handwritten style with glare transitions
+python helpers/pipeline.py project/ --caption-style handwritten --transition glare
+
+# No captions at all
+python helpers/pipeline.py project/ --no-captions
+```
+
+**Styles:** `clean`, `bold-outline`, `pop`, `neon`, `handwritten`
+**Modes:** `phrase` (karaoke groups), `word` (one at a time)
+**Transitions:** `flash`, `swipe`, `film-burn`, `glare`, `glitch`, `warp`, `stripe-wipe`, `ink`, `none`
 
 ## Manual install
 
