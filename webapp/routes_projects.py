@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -19,7 +20,10 @@ DRIVE_ROOT_FOLDER_ID = os.environ.get("DRIVE_ROOT_FOLDER_ID", "")
 async def list_projects(user: dict = Depends(current_user)):
     """Every video folder under the root that has a raw/ + cut/ pair,
     cross-referenced with whether a job already exists for it."""
-    drive_projects = worker._drive_client.list_projects(DRIVE_ROOT_FOLDER_ID)
+    # to_thread: this is a blocking Drive walk (see drive.py) — running it
+    # directly in this async handler would stall the whole event loop,
+    # including every in-flight job, for however long the walk takes.
+    drive_projects = await asyncio.to_thread(worker._drive_client.list_projects, DRIVE_ROOT_FOLDER_ID)
     jobs_by_folder = {}
     for job in db.list_jobs():
         jobs_by_folder.setdefault(job.drive_folder_id, job)  # most recent (list is DESC)
