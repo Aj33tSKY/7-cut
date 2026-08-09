@@ -6,6 +6,15 @@ adjust the cut in the browser, click Render, the final export lands back in
 Drive. See the architecture sketch for the full picture — this file is just
 setup.
 
+**Drive layout**: one root folder, shared once with the service account —
+permissions inherit to everything underneath, current and future. Under it,
+any depth of nesting you want (e.g. `CLIENT/BATCH/VIDEO/`); a "project" is
+any folder that directly contains a `raw/` and a `cut/` subfolder
+(case-insensitive). The dashboard walks the whole tree looking for those
+pairs and shows each one by its full path, e.g. `CLIENT_A / BATCH_A /
+VIDEO_A`. Footage + `script.md` go in `raw/`; the finished export lands in
+that same project's own `cut/` — there's no single shared output folder.
+
 ## What's here
 
 | File | Role |
@@ -35,8 +44,7 @@ cd webapp
 GOOGLE_SERVICE_ACCOUNT_JSON=/path/to/service-account.json \
 GOOGLE_OAUTH_CLIENT_ID=... \
 GOOGLE_OAUTH_CLIENT_SECRET=... \
-DRIVE_RAW_FOLDER_ID=... \
-DRIVE_EDITED_FOLDER_ID=... \
+DRIVE_ROOT_FOLDER_ID=... \
 ALLOWED_GOOGLE_DOMAIN=yourcompany.com \
 SESSION_SECRET=$(openssl rand -hex 32) \
 ELEVENLABS_API_KEY=... \
@@ -51,8 +59,8 @@ Open `http://127.0.0.1:8000`.
 docstring for why):**
 1. Google Cloud Console → IAM & Admin → Service Accounts → create one, enable the Drive API on the project.
 2. Create a JSON key, keep it out of git. That's `GOOGLE_SERVICE_ACCOUNT_JSON`.
-3. Share both the raw-footage folder and the edited-exports folder in Drive with the service account's email, Editor access.
-4. Grab each folder's id from its URL (`drive.google.com/drive/folders/<id>`) — those are `DRIVE_RAW_FOLDER_ID` / `DRIVE_EDITED_FOLDER_ID`.
+3. Share the single root folder (the one containing all your `CLIENT/BATCH/VIDEO/{raw,cut}` folders) with the service account's email, Editor access. Do this once — it covers every project folder underneath, including ones created later.
+4. Grab the root folder's id from its URL (`drive.google.com/drive/folders/<id>`) — that's `DRIVE_ROOT_FOLDER_ID`.
 
 **OAuth client (team login):**
 1. Same Cloud project → APIs & Services → Credentials → OAuth client ID → Web application.

@@ -101,19 +101,24 @@ function statusChip(job) {
   return `<span class="chip ${cls}">${label}</span>`;
 }
 
+function queueAttrs(project) {
+  return `data-queue="${project.video_folder_id}" data-path="${escapeAttr(project.path)}" `
+       + `data-raw="${project.raw_folder_id}" data-cut="${project.cut_folder_id}"`;
+}
+
 function actionFor(project) {
   const job = project.job;
   if (!job) {
-    return `<button class="primary" data-queue="${project.drive_folder_id}" data-name="${escapeAttr(project.name)}">Queue</button>`;
+    return `<button class="primary" ${queueAttrs(project)}>Queue</button>`;
   }
   if (job.status === 'awaiting_review') {
     return `<a class="btn-link" href="/review/${job.id}"><button class="review-btn">Review →</button></a>`;
   }
   if (job.status === 'failed') {
-    return `<button class="primary" data-queue="${project.drive_folder_id}" data-name="${escapeAttr(project.name)}">Retry</button>`;
+    return `<button class="primary" ${queueAttrs(project)}>Retry</button>`;
   }
   if (job.status === 'done') {
-    return `<button data-queue="${project.drive_folder_id}" data-name="${escapeAttr(project.name)}">Re-cut</button>`;
+    return `<button ${queueAttrs(project)}>Re-cut</button>`;
   }
   return `<button disabled>…</button>`;
 }
@@ -142,7 +147,7 @@ async function loadProjects() {
   list.innerHTML = `<ul class="projects">` + projects.map(p => `
     <li class="project">
       <div>
-        <div class="name">${escapeHtml(p.name)}</div>
+        <div class="name">${escapeHtml(p.path.split('/').join(' / '))}</div>
         <div class="meta">${p.job ? 'queued by ' + escapeHtml(p.job.created_by) : 'not queued yet'}</div>
         ${p.job && p.job.error ? `<div class="error">${escapeHtml(p.job.error)}</div>` : ''}
       </div>
@@ -152,15 +157,17 @@ async function loadProjects() {
   `).join('') + `</ul>`;
 
   list.querySelectorAll('[data-queue]').forEach(btn => {
-    btn.addEventListener('click', () => queueProject(btn.dataset.queue, btn.dataset.name));
+    btn.addEventListener('click', () => queueProject(
+      btn.dataset.queue, btn.dataset.path, btn.dataset.raw, btn.dataset.cut
+    ));
   });
 }
 
-async function queueProject(driveFolderId, name) {
-  const res = await fetch(`/api/projects/${driveFolderId}/queue`, {
+async function queueProject(videoFolderId, path, rawFolderId, cutFolderId) {
+  const res = await fetch(`/api/projects/${videoFolderId}/queue`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ path, raw_folder_id: rawFolderId, cut_folder_id: cutFolderId }),
   });
   if (res.ok) loadProjects();
 }

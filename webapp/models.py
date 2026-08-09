@@ -35,8 +35,10 @@ PAUSED_STATUSES = {JobStatus.AWAITING_REVIEW, JobStatus.DONE, JobStatus.FAILED}
 @dataclass
 class Job:
     id: str
-    drive_folder_id: str
-    project_name: str
+    drive_folder_id: str       # the VIDEO_X folder's id — identity/dedup key
+    drive_raw_folder_id: str   # VIDEO_X/raw — where footage + script.md are downloaded from
+    drive_cut_folder_id: str   # VIDEO_X/cut — where the final render is uploaded to
+    project_name: str          # full path, e.g. "CLIENT_A/BATCH_A/VIDEO_A"
     status: JobStatus
     created_by: str
     created_at: str
@@ -50,6 +52,8 @@ class Job:
         return cls(
             id=row["id"],
             drive_folder_id=row["drive_folder_id"],
+            drive_raw_folder_id=row["drive_raw_folder_id"],
+            drive_cut_folder_id=row["drive_cut_folder_id"],
             project_name=row["project_name"],
             status=JobStatus(row["status"]),
             created_by=row["created_by"],
@@ -63,6 +67,8 @@ class Job:
         return {
             "id": self.id,
             "drive_folder_id": self.drive_folder_id,
+            "drive_raw_folder_id": self.drive_raw_folder_id,
+            "drive_cut_folder_id": self.drive_cut_folder_id,
             "project_name": self.project_name,
             "status": self.status.value,
             "created_by": self.created_by,

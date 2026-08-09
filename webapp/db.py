@@ -42,6 +42,8 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS jobs (
                 id TEXT PRIMARY KEY,
                 drive_folder_id TEXT NOT NULL,
+                drive_raw_folder_id TEXT NOT NULL,
+                drive_cut_folder_id TEXT NOT NULL,
                 project_name TEXT NOT NULL,
                 status TEXT NOT NULL,
                 created_by TEXT NOT NULL,
@@ -68,15 +70,22 @@ def _write():
             conn.close()
 
 
-def create_job(drive_folder_id: str, project_name: str, created_by: str) -> Job:
+def create_job(
+    drive_folder_id: str,
+    drive_raw_folder_id: str,
+    drive_cut_folder_id: str,
+    project_name: str,
+    created_by: str,
+) -> Job:
     job_id = str(uuid.uuid4())
     now = _now()
     with _write() as conn:
         conn.execute(
-            "INSERT INTO jobs (id, drive_folder_id, project_name, status, "
-            "created_by, created_at, updated_at, error, stats) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, NULL, '{}')",
-            (job_id, drive_folder_id, project_name, JobStatus.QUEUED.value, created_by, now, now),
+            "INSERT INTO jobs (id, drive_folder_id, drive_raw_folder_id, drive_cut_folder_id, "
+            "project_name, status, created_by, created_at, updated_at, error, stats) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, '{}')",
+            (job_id, drive_folder_id, drive_raw_folder_id, drive_cut_folder_id,
+             project_name, JobStatus.QUEUED.value, created_by, now, now),
         )
     return get_job(job_id)
 

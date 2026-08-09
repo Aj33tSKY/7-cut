@@ -35,7 +35,6 @@ JOBS_DIR = Path(__file__).resolve().parent / "data" / "jobs"
 
 MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", "3"))
 POLL_INTERVAL_S = float(os.environ.get("WORKER_POLL_INTERVAL_S", "2"))
-DRIVE_EDITED_FOLDER_ID = os.environ.get("DRIVE_EDITED_FOLDER_ID", "")
 
 _semaphore = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
 _in_flight: set[str] = set()
@@ -70,7 +69,7 @@ async def run_intake_pipeline(job_id: str) -> None:
             edir = edit_dir(job_id)
 
             db.update_status(job_id, JobStatus.DOWNLOADING)
-            await asyncio.to_thread(_drive_client.download_project, job.drive_folder_id, jdir)
+            await asyncio.to_thread(_drive_client.download_project, job.drive_raw_folder_id, jdir)
 
             db.update_status(job_id, JobStatus.TRANSCRIBING)
             await _run_helper_async(
@@ -109,8 +108,9 @@ async def run_finish_pipeline(job_id: str) -> None:
             )
 
             db.update_status(job_id, JobStatus.UPLOADING)
+            leaf_name = job.project_name.rsplit("/", 1)[-1]
             await asyncio.to_thread(
-                _drive_client.upload_file, out_path, DRIVE_EDITED_FOLDER_ID, f"{job.project_name}.mp4"
+                _drive_client.upload_file, out_path, job.drive_cut_folder_id, f"{leaf_name}.mp4"
             )
 
             db.update_status(job_id, JobStatus.DONE)

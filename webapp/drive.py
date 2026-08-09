@@ -1,11 +1,16 @@
-"""Google Drive client — service account, read raw/, write edited/.
+"""Google Drive client — service account, walks a nested client/batch/video
+tree, reads each video's raw/ subfolder, writes to its cut/ subfolder.
 
 Deliberately decoupled from whoever's logged in (see auth.py): a session
 expiring mid-render can't orphan a job or block an upload. The service
-account just needs to be added as a member of both shared folders.
+account only needs to be a member of (or shared on) the single root folder
+— Drive permissions inherit down the whole tree, current and future
+subfolders alike.
 
-Project convention matches the CLI tool exactly: one subfolder of the raw
-folder = one project, containing raw clips + script.md.
+Project convention: an arbitrary-depth tree (e.g. CLIENT/BATCH/VIDEO) where
+a "project" is any folder that directly contains both a raw/ and a cut/
+subfolder (case-insensitive). Recursion stops at the first such folder found
+on a branch — nothing nests a project inside another project.
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 FOLDER_MIME = "application/vnd.google-apps.folder"
 GOOGLE_NATIVE_PREFIX = "application/vnd.google-apps."
+MAX_WALK_DEPTH = 6
 
 
 class DriveClient:
@@ -29,15 +35,14 @@ class DriveClient:
         )
         self._svc = build("drive", "v3", credentials=creds, cache_discovery=False)
 
-    def list_projects(self, raw_folder_id: str) -> list[dict]:
-        """Each subfolder of raw_folder_id is one project."""
+    def _list_subfolders(self, folder_id: str) -> list[dict]:
         results = []
         page_token = None
-        query = f"'{raw_folder_id}' in parents and mimeType = '{FOLDER_MIME}' and trashed = false"
+        query = f"'{folder_id}' in parents and mimeType = '{FOLDER_MIME}' and trashed = false"
         while True:
             resp = self._svc.files().list(
                 q=query,
-                fields="nextPageToken, files(id, name, modifiedTime)",
+                fields="nextPageToken, files(id, name)",
                 pageToken=page_token,
             ).execute()
             results.extend(resp.get("files", []))
@@ -46,15 +51,44 @@ class DriveClient:
                 break
         return results
 
-    def download_project(self, project_folder_id: str, dest_dir: Path) -> None:
-        """Download every file directly inside project_folder_id into dest_dir.
+    def list_projects(self, root_folder_id: str) -> list[dict]:
+        """Recursively walk root_folder_id; one entry per video folder found.
+
+        Each result: {video_folder_id, path, raw_folder_id, cut_folder_id}.
+        `path` is the full "CLIENT/BATCH/VIDEO"-style path from the root.
+        """
+        results: list[dict] = []
+        for child in self._list_subfolders(root_folder_id):
+            self._walk(child, [child["name"]], results, depth=1)
+        return results
+
+    def _walk(self, folder: dict, path_parts: list[str], results: list[dict], depth: int) -> None:
+        subfolders = self._list_subfolders(folder["id"])
+        by_lower_name = {f["name"].strip().lower(): f for f in subfolders}
+
+        if "raw" in by_lower_name and "cut" in by_lower_name:
+            results.append({
+                "video_folder_id": folder["id"],
+                "path": "/".join(path_parts),
+                "raw_folder_id": by_lower_name["raw"]["id"],
+                "cut_folder_id": by_lower_name["cut"]["id"],
+            })
+            return
+
+        if depth >= MAX_WALK_DEPTH:
+            return
+        for sub in subfolders:
+            self._walk(sub, [*path_parts, sub["name"]], results, depth + 1)
+
+    def download_project(self, raw_folder_id: str, dest_dir: Path) -> None:
+        """Download every file directly inside a project's raw/ folder into dest_dir.
 
         Google-native files (e.g. script.md pasted as a Google Doc instead of
         an uploaded .md) are exported as plain text so cut_engine.py sees the
         same script.md format either way.
         """
         dest_dir.mkdir(parents=True, exist_ok=True)
-        query = f"'{project_folder_id}' in parents and trashed = false"
+        query = f"'{raw_folder_id}' in parents and trashed = false"
         page_token = None
         while True:
             resp = self._svc.files().list(
