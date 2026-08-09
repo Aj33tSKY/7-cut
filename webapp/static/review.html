@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Cut Review</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #15161a; color: #e6e6e6;
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+
+  #stage {
+    flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
+    background: #0b0c0e; padding: 16px;
+  }
+  #player { max-width: 100%; max-height: 100%; background: black; }
+
+  #controls {
+    display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+    border-top: 1px solid #2a2b31; background: #1b1c21;
+  }
+  a.back {
+    color: #9a9ba3; text-decoration: none; font-size: 12px; padding: 5px 8px;
+  }
+  a.back:hover { color: #e6e6e6; }
+  button {
+    background: #2a2b31; color: #e6e6e6; border: 1px solid #3a3b42;
+    border-radius: 5px; padding: 5px 12px; cursor: pointer; font-size: 12px;
+  }
+  button:hover { background: #34353c; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button.primary { background: #3a6ff0; border-color: #3a6ff0; }
+  button.primary:hover { background: #4a7cff; }
+  button.render { background: #ff5a00; border-color: #ff5a00; }
+  button.render:hover { background: #ff7a2e; }
+  #time { font-variant-numeric: tabular-nums; color: #9a9ba3; }
+  #status { margin-left: auto; color: #9a9ba3; }
+  #hint { padding: 4px 14px; color: #6a6b73; font-size: 11px; background: #1b1c21; border-top: 1px solid #232429; }
+
+  #timelineWrap { background: #1b1c21; border-top: 1px solid #2a2b31; }
+  #timelineScroll { overflow-x: auto; overflow-y: hidden; position: relative; padding: 8px 0 14px; }
+  #ruler { position: relative; height: 16px; margin-left: 0; }
+  .tick {
+    position: absolute; top: 0; font-size: 10px; color: #6a6b73;
+    border-left: 1px solid #34353c; padding-left: 3px; height: 100%;
+  }
+  #trackOuter { position: relative; height: 64px; margin: 4px 0 0; }
+  #track { position: relative; height: 64px; }
+  #playhead {
+    position: absolute; top: 0; bottom: -14px; width: 1px; background: #ff4d4d;
+    pointer-events: none; z-index: 20;
+  }
+  #playhead::before {
+    content: ""; position: absolute; top: -4px; left: -4px; width: 9px; height: 9px;
+    background: #ff4d4d; border-radius: 50%;
+  }
+
+  .clip {
+    position: absolute; top: 0; height: 64px; border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.12); overflow: hidden; cursor: grab;
+    display: flex; align-items: flex-end;
+  }
+  .clip.selected { outline: 2px solid #3a6ff0; outline-offset: -1px; }
+  .clip-label {
+    font-size: 10px; padding: 3px 4px; color: rgba(255,255,255,0.85);
+    background: rgba(0,0,0,0.35); width: 100%; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; pointer-events: none;
+  }
+  .handle {
+    position: absolute; top: 0; bottom: 0; width: 7px; cursor: ew-resize;
+    background: rgba(255,255,255,0.08);
+  }
+  .handle:hover { background: rgba(255,255,255,0.25); }
+  .handle-l { left: 0; } .handle-r { right: 0; }
+  .del {
+    position: absolute; top: 2px; right: 2px; width: 14px; height: 14px; line-height: 13px;
+    text-align: center; font-size: 11px; border-radius: 3px; background: rgba(0,0,0,0.45);
+    cursor: pointer; opacity: 0; transition: opacity 0.1s;
+  }
+  .clip:hover .del { opacity: 1; }
+  .del:hover { background: #c0392b; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage"><video id="player" playsinline></video></div>
+  <div id="controls">
+    <a class="back" href="/">← Dashboard</a>
+    <button id="playBtn">▶</button>
+    <button id="splitBtn">Split (S)</button>
+    <button id="undoBtn">Undo (⌘Z)</button>
+    <span id="time">0:00.00 / 0:00.00</span>
+    <span id="status"></span>
+    <button id="saveBtn" class="primary" disabled>Save</button>
+    <button id="renderBtn" class="render">Render →</button>
+  </div>
+  <div id="hint">drag clip edges to trim &middot; drag a clip to reorder &middot; click timeline to seek &middot; S splits at playhead &middot; Del removes selected &middot; Space play/pause</div>
+  <div id="timelineWrap">
+    <div id="timelineScroll">
+      <div id="ruler"></div>
+      <div id="trackOuter">
+        <div id="track"></div>
+        <div id="playhead"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const JOB_ID = location.pathname.split('/').filter(Boolean).pop();
+
+const state = {
+  ranges: [],
+  sourceDurations: {},
+  pxPerSec: 42,
+  selected: -1,
+  dragging: null,
+  reorderFrom: null,
+  playing: false,
+  currentIdx: 0,
+  dirty: false,
+};
+const history = [];
+
+const els = {
+  video: document.getElementById('player'),
+  track: document.getElementById('track'),
+  trackOuter: document.getElementById('trackOuter'),
+  playhead: document.getElementById('playhead'),
+  ruler: document.getElementById('ruler'),
+  scroll: document.getElementById('timelineScroll'),
+  playBtn: document.getElementById('playBtn'),
+  splitBtn: document.getElementById('splitBtn'),
+  undoBtn: document.getElementById('undoBtn'),
+  saveBtn: document.getElementById('saveBtn'),
+  renderBtn: document.getElementById('renderBtn'),
+  status: document.getElementById('status'),
+  time: document.getElementById('time'),
+};
+
+function withOffsets(ranges) {
+  let t = 0;
+  return ranges.map(r => {
+    const dur = r.end - r.start;
+    const o = Object.assign({}, r, { outStart: t, outEnd: t + dur, dur });
+    t += dur;
+    return o;
+  });
+}
+function totalDuration() {
+  return state.ranges.reduce((s, r) => s + (r.end - r.start), 0);
+}
+function round3(n) { return Math.round(n * 1000) / 1000; }
+function fmt(t) {
+  const m = Math.floor(t / 60);
+  const s = (t % 60).toFixed(2).padStart(5, '0');
+  return `${m}:${s}`;
+}
+function mediaUrl(name) { return `/api/jobs/${JOB_ID}/media/${encodeURIComponent(name)}`; }
+function shortName(name) { return name.length > 14 ? name.slice(0, 12) + '…' : name; }
+function colorFor(name) {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return `hsl(${h}, 42%, 30%)`;
+}
+
+async function load() {
+  const res = await fetch(`/api/jobs/${JOB_ID}/edl`);
+  if (!res.ok) {
+    els.status.textContent = 'Could not load this job — it may not be ready for review yet.';
+    return;
+  }
+  const data = await res.json();
+  state.ranges = data.ranges;
+  state.sourceDurations = data.source_durations;
+  render();
+  seekToOutput(0, false);
+}
+
+function pushHistory() {
+  history.push(JSON.stringify(state.ranges));
+  if (history.length > 50) history.shift();
+}
+function undo() {
+  if (!history.length) return;
+  state.ranges = JSON.parse(history.pop());
+  if (state.selected >= state.ranges.length) state.selected = state.ranges.length - 1;
+  render();
+  markDirty(true);
+  seekToOutput(currentOutputTime(), false);
+}
+
+function markDirty(v) {
+  state.dirty = v;
+  els.saveBtn.disabled = !v;
+  els.status.textContent = v ? 'Unsaved changes' : els.status.textContent;
+}
+window.addEventListener('beforeunload', (e) => {
+  if (state.dirty) { e.preventDefault(); e.returnValue = ''; }
+});
+
+function render() {
+  const offs = withOffsets(state.ranges);
+  const total = offs.length ? offs[offs.length - 1].outEnd : 0;
+  const width = Math.max(total * state.pxPerSec, 200);
+  els.track.style.width = width + 'px';
+  els.ruler.style.width = width + 'px';
+  els.track.innerHTML = '';
+
+  offs.forEach((r, i) => {
+    const el = document.createElement('div');
+    el.className = 'clip' + (i === state.selected ? ' selected' : '');
+    el.style.left = (r.outStart * state.pxPerSec) + 'px';
+    el.style.width = Math.max(r.dur * state.pxPerSec, 6) + 'px';
+    el.style.background = colorFor(r.source);
+    el.draggable = true;
+
+    const label = document.createElement('div');
+    label.className = 'clip-label';
+    label.textContent = `${shortName(r.source)} · ${r.dur.toFixed(2)}s`;
+    el.appendChild(label);
+
+    const lh = document.createElement('div');
+    lh.className = 'handle handle-l';
+    lh.addEventListener('pointerdown', (e) => startTrim(e, i, 'l'));
+    el.appendChild(lh);
+
+    const rh = document.createElement('div');
+    rh.className = 'handle handle-r';
+    rh.addEventListener('pointerdown', (e) => startTrim(e, i, 'r'));
+    el.appendChild(rh);
+
+    const del = document.createElement('div');
+    del.className = 'del';
+    del.textContent = '×';
+    del.title = 'Delete clip';
+    del.addEventListener('click', (e) => { e.stopPropagation(); deleteClip(i); });
+    el.appendChild(del);
+
+    el.addEventListener('click', (e) => { if (!state.dragging) selectClip(i); });
+    el.addEventListener('dragstart', (e) => {
+      state.reorderFrom = i;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(i));
+    });
+    el.addEventListener('dragover', (e) => e.preventDefault());
+    el.addEventListener('drop', (e) => { e.preventDefault(); onDrop(i); });
+
+    els.track.appendChild(el);
+  });
+
+  renderRuler(total);
+  updatePlayhead();
+}
+
+function renderRuler(total) {
+  els.ruler.innerHTML = '';
+  const step = state.pxPerSec < 15 ? 5 : 1;
+  for (let t = 0; t <= total + 0.001; t += step) {
+    const tick = document.createElement('div');
+    tick.className = 'tick';
+    tick.style.left = (t * state.pxPerSec) + 'px';
+    tick.textContent = fmt(t).replace(/\.\d+$/, '');
+    els.ruler.appendChild(tick);
+  }
+}
+
+// ---- trim ----
+function startTrim(e, idx, side) {
+  e.stopPropagation();
+  e.preventDefault();
+  pushHistory();
+  const r = state.ranges[idx];
+  state.dragging = { idx, side, startX: e.clientX, origStart: r.start, origEnd: r.end };
+  document.addEventListener('pointermove', onTrimMove);
+  document.addEventListener('pointerup', endTrim);
+}
+function onTrimMove(e) {
+  const d = state.dragging;
+  if (!d) return;
+  const dt = (e.clientX - d.startX) / state.pxPerSec;
+  const r = state.ranges[d.idx];
+  const maxDur = state.sourceDurations[r.source] || Infinity;
+  const MIN = 0.05;
+  if (d.side === 'l') {
+    r.start = round3(Math.max(0, Math.min(d.origStart + dt, r.end - MIN)));
+  } else {
+    r.end = round3(Math.min(maxDur, Math.max(d.origEnd + dt, r.start + MIN)));
+  }
+  render();
+  markDirty(true);
+}
+function endTrim() {
+  state.dragging = null;
+  document.removeEventListener('pointermove', onTrimMove);
+  document.removeEventListener('pointerup', endTrim);
+  seekToOutput(currentOutputTime(), false);
+}
+
+// ---- reorder ----
+function onDrop(targetIdx) {
+  if (state.reorderFrom === null) return;
+  pushHistory();
+  const from = state.reorderFrom;
+  state.reorderFrom = null;
+  if (from === targetIdx) return;
+  const [moved] = state.ranges.splice(from, 1);
+  state.ranges.splice(targetIdx, 0, moved);
+  state.selected = targetIdx;
+  render();
+  markDirty(true);
+  seekToOutput(currentOutputTime(), false);
+}
+
+// ---- split / delete ----
+function splitAtPlayhead() {
+  const t = currentOutputTime();
+  const offs = withOffsets(state.ranges);
+  const idx = offs.findIndex(r => t > r.outStart + 0.02 && t < r.outEnd - 0.02);
+  if (idx === -1) return;
+  pushHistory();
+  const r = state.ranges[idx];
+  const localT = round3(r.start + (t - offs[idx].outStart));
+  const a = Object.assign({}, r, { end: localT });
+  const b = Object.assign({}, r, { start: localT });
+  state.ranges.splice(idx, 1, a, b);
+  state.selected = idx;
+  render();
+  markDirty(true);
+}
+function deleteClip(idx) {
+  if (state.ranges.length <= 1) return;
+  pushHistory();
+  state.ranges.splice(idx, 1);
+  if (state.selected >= state.ranges.length) state.selected = state.ranges.length - 1;
+  render();
+  markDirty(true);
+  seekToOutput(currentOutputTime(), false);
+}
+
+// ---- selection / seeking / playback ----
+function selectClip(idx) {
+  state.selected = idx;
+  const offs = withOffsets(state.ranges);
+  seekToOutput(offs[idx].outStart, false);
+  render();
+}
+
+function currentOutputTime() {
+  const offs = withOffsets(state.ranges);
+  const r = offs[state.currentIdx];
+  if (!r) return 0;
+  return r.outStart + (els.video.currentTime - r.start);
+}
+
+function seekToOutput(t, keepPlaying) {
+  const offs = withOffsets(state.ranges);
+  if (!offs.length) return;
+  t = Math.max(0, Math.min(t, offs[offs.length - 1].outEnd - 0.001));
+  let idx = offs.findIndex(r => t >= r.outStart && t < r.outEnd);
+  if (idx === -1) idx = offs.length - 1;
+  const r = offs[idx];
+  state.currentIdx = idx;
+  const localT = r.start + (t - r.outStart);
+  const url = new URL(mediaUrl(r.source), location.href).href;
+
+  const applySeek = () => {
+    els.video.currentTime = localT;
+    if (keepPlaying) els.video.play();
+  };
+
+  if (els.video.currentSrc !== url) {
+    els.video.src = mediaUrl(r.source);
+    els.video.addEventListener('loadedmetadata', applySeek, { once: true });
+  } else {
+    applySeek();
+  }
+  updatePlayhead();
+}
+
+els.video.addEventListener('timeupdate', () => {
+  if (!state.playing) { updatePlayhead(); return; }
+  const offs = withOffsets(state.ranges);
+  const r = offs[state.currentIdx];
+  if (!r) return;
+  if (els.video.currentTime >= r.end - 0.02) {
+    const nextIdx = state.currentIdx + 1;
+    if (nextIdx >= offs.length) {
+      els.video.pause();
+      state.playing = false;
+      els.playBtn.textContent = '▶';
+      seekToOutput(0, false);
+      return;
+    }
+    seekToOutput(offs[nextIdx].outStart, true);
+    return;
+  }
+  updatePlayhead();
+});
+
+function updatePlayhead() {
+  const t = currentOutputTime();
+  els.playhead.style.left = (t * state.pxPerSec) + 'px';
+  els.time.textContent = `${fmt(t)} / ${fmt(totalDuration())}`;
+  const scrollLeft = els.scroll.scrollLeft;
+  const scrollWidth = els.scroll.clientWidth;
+  const x = t * state.pxPerSec;
+  if (x < scrollLeft || x > scrollLeft + scrollWidth - 40) {
+    els.scroll.scrollLeft = Math.max(0, x - scrollWidth / 3);
+  }
+}
+
+function togglePlay() {
+  if (state.playing) {
+    els.video.pause();
+    state.playing = false;
+    els.playBtn.textContent = '▶';
+  } else {
+    state.playing = true;
+    els.playBtn.textContent = '⏸';
+    const offs = withOffsets(state.ranges);
+    if (state.currentIdx >= offs.length) state.currentIdx = 0;
+    seekToOutput(currentOutputTime(), true);
+  }
+}
+
+async function save() {
+  els.status.textContent = 'Saving…';
+  try {
+    const res = await fetch(`/api/jobs/${JOB_ID}/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ranges: state.ranges }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    markDirty(false);
+    els.status.textContent = `Saved — ${data.total_duration_s.toFixed(2)}s (backup written)`;
+  } catch (err) {
+    els.status.textContent = 'Save failed: ' + err.message;
+  }
+}
+
+async function renderNow() {
+  els.renderBtn.disabled = true;
+  try {
+    if (state.dirty) await save();
+    els.status.textContent = 'Starting render…';
+    const res = await fetch(`/api/jobs/${JOB_ID}/render`, { method: 'POST' });
+    if (!res.ok) throw new Error(await res.text());
+    location.href = '/';
+  } catch (err) {
+    els.status.textContent = 'Could not start render: ' + err.message;
+    els.renderBtn.disabled = false;
+  }
+}
+
+// ---- click-to-seek on empty timeline area ----
+els.trackOuter.addEventListener('click', (e) => {
+  if (e.target.closest('.clip')) return;
+  const rect = els.track.getBoundingClientRect();
+  const t = (e.clientX - rect.left) / state.pxPerSec;
+  seekToOutput(t, state.playing);
+});
+
+// ---- controls ----
+els.playBtn.addEventListener('click', togglePlay);
+els.splitBtn.addEventListener('click', splitAtPlayhead);
+els.undoBtn.addEventListener('click', undo);
+els.saveBtn.addEventListener('click', save);
+els.renderBtn.addEventListener('click', renderNow);
+
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+  else if (e.key === 's' || e.key === 'S') { splitAtPlayhead(); }
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && state.selected >= 0) {
+    e.preventDefault();
+    deleteClip(state.selected);
+  } else if (e.key.toLowerCase() === 'z' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    undo();
+  }
+});
+
+load();
+</script>
+</body>
+</html>

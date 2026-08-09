@@ -14,7 +14,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-animations = ["manim"]
+webapp = [
+    "fastapi",
+    "uvicorn[standard]",
+    "itsdangerous",
+    "authlib",
+    "httpx",
+    "google-api-python-client",
+    "google-auth",
+    "google-auth-oauthlib",
+]
 
 [build-system]
 requires = ["setuptools>=61.0"]

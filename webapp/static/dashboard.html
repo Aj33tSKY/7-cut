@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>video-use</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #15161a; color: #e6e6e6;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px; border-bottom: 1px solid #2a2b31; background: #1b1c21;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 700; }
+  header .who { display: flex; align-items: center; gap: 14px; font-size: 12.5px; color: #9a9ba3; }
+  header a { color: #9a9ba3; text-decoration: none; }
+  header a:hover { color: #e6e6e6; }
+
+  main { max-width: 880px; margin: 0 auto; padding: 28px 24px 80px; }
+
+  .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .toolbar h2 { font-size: 15px; margin: 0; }
+  .toolbar .sub { color: #6a6b73; font-size: 12.5px; }
+
+  .empty { color: #6a6b73; padding: 40px 0; text-align: center; font-size: 13px; }
+
+  ul.projects { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  li.project {
+    display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 16px;
+    background: #1b1c21; border: 1px solid #2a2b31; border-radius: 8px; padding: 14px 16px;
+  }
+  .project .name { font-weight: 600; font-size: 13.5px; }
+  .project .meta { color: #6a6b73; font-size: 11.5px; margin-top: 2px; }
+  .project .error { color: #e0604a; font-size: 11.5px; margin-top: 4px; max-width: 46ch; }
+
+  .chip {
+    font-family: ui-monospace, "SF Mono", monospace; font-size: 11px; font-weight: 600;
+    letter-spacing: 0.02em; padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+  }
+  .chip::before { content: "●"; margin-right: 5px; font-size: 8px; }
+  .chip.idle { background: #26272d; color: #8b8d96; }
+  .chip.progress { background: #23324f; color: #7fa8ff; }
+  .chip.progress::before { animation: pulse 1.2s ease-in-out infinite; }
+  .chip.review { background: #3a2416; color: #ffb48a; }
+  .chip.done { background: #163a2c; color: #4fbe93; }
+  .chip.failed { background: #3a1e1a; color: #e0604a; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  button {
+    background: #2a2b31; color: #e6e6e6; border: 1px solid #3a3b42;
+    border-radius: 6px; padding: 7px 14px; cursor: pointer; font-size: 12.5px;
+    font-family: inherit;
+  }
+  button:hover { background: #34353c; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button.primary { background: #3a6ff0; border-color: #3a6ff0; }
+  button.primary:hover { background: #4a7cff; }
+  button.review-btn { background: #ff5a00; border-color: #ff5a00; }
+  button.review-btn:hover { background: #ff7a2e; }
+  a.btn-link { text-decoration: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>video-use</h1>
+  <div class="who">
+    <span id="userEmail" class="mono"></span>
+    <a href="/logout">Sign out</a>
+  </div>
+</header>
+
+<main>
+  <div class="toolbar">
+    <h2>Projects</h2>
+    <span class="sub" id="refreshNote">refreshing every 3s</span>
+  </div>
+  <div id="list"><div class="empty">Loading…</div></div>
+</main>
+
+<script>
+function statusChip(job) {
+  if (!job) return `<span class="chip idle">not started</span>`;
+  const s = job.status;
+  const map = {
+    queued: ['progress', 'queued'],
+    downloading: ['progress', 'downloading'],
+    transcribing: ['progress', 'transcribing'],
+    cutting: ['progress', 'cutting'],
+    awaiting_review: ['review', 'ready to review'],
+    rendering: ['progress', 'rendering'],
+    uploading: ['progress', 'uploading'],
+    done: ['done', 'done'],
+    failed: ['failed', 'failed'],
+  };
+  const [cls, label] = map[s] || ['idle', s];
+  return `<span class="chip ${cls}">${label}</span>`;
+}
+
+function actionFor(project) {
+  const job = project.job;
+  if (!job) {
+    return `<button class="primary" data-queue="${project.drive_folder_id}" data-name="${escapeAttr(project.name)}">Queue</button>`;
+  }
+  if (job.status === 'awaiting_review') {
+    return `<a class="btn-link" href="/review/${job.id}"><button class="review-btn">Review →</button></a>`;
+  }
+  if (job.status === 'failed') {
+    return `<button class="primary" data-queue="${project.drive_folder_id}" data-name="${escapeAttr(project.name)}">Retry</button>`;
+  }
+  if (job.status === 'done') {
+    return `<button data-queue="${project.drive_folder_id}" data-name="${escapeAttr(project.name)}">Re-cut</button>`;
+  }
+  return `<button disabled>…</button>`;
+}
+
+function escapeAttr(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function loadProjects() {
+  const res = await fetch('/api/projects');
+  if (res.status === 401) { location.href = '/login'; return; }
+  if (!res.ok) {
+    document.getElementById('list').innerHTML = `<div class="empty">Could not load projects from Drive. Check the service is configured correctly.</div>`;
+    return;
+  }
+  const projects = await res.json();
+  const list = document.getElementById('list');
+  if (!projects.length) {
+    list.innerHTML = `<div class="empty">No project folders found in the shared Drive folder yet.</div>`;
+    return;
+  }
+  list.innerHTML = `<ul class="projects">` + projects.map(p => `
+    <li class="project">
+      <div>
+        <div class="name">${escapeHtml(p.name)}</div>
+        <div class="meta">${p.job ? 'queued by ' + escapeHtml(p.job.created_by) : 'not queued yet'}</div>
+        ${p.job && p.job.error ? `<div class="error">${escapeHtml(p.job.error)}</div>` : ''}
+      </div>
+      ${statusChip(p.job)}
+      ${actionFor(p)}
+    </li>
+  `).join('') + `</ul>`;
+
+  list.querySelectorAll('[data-queue]').forEach(btn => {
+    btn.addEventListener('click', () => queueProject(btn.dataset.queue, btn.dataset.name));
+  });
+}
+
+async function queueProject(driveFolderId, name) {
+  const res = await fetch(`/api/projects/${driveFolderId}/queue`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (res.ok) loadProjects();
+}
+
+async function loadUser() {
+  const res = await fetch('/api/me');
+  if (!res.ok) return;
+  const user = await res.json();
+  document.getElementById('userEmail').textContent = user.email;
+}
+
+loadUser();
+loadProjects();
+setInterval(loadProjects, 3000);
+</script>
+</body>
+</html>
