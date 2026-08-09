@@ -51,6 +51,17 @@ app.include_router(projects_router)
 app.include_router(jobs_router)
 
 
+@app.get("/health")
+async def health():
+    """Unauthenticated — Railway (or any platform healthcheck) needs a path
+    that doesn't require login. Pointing a healthcheck at `/` would get a
+    redirect/401 on every anonymous probe, which can read as "unhealthy" and
+    trigger a restart — killing whatever job happens to be running at the
+    time. Set this as the service's Healthcheck Path in Railway settings.
+    """
+    return {"ok": True}
+
+
 @app.get("/")
 async def dashboard(user: dict = Depends(current_user)):
     return FileResponse(STATIC_DIR / "dashboard.html")
