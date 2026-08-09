@@ -19,4 +19,11 @@ ENV PATH="/repo/.venv/bin:$PATH"
 WORKDIR /repo/webapp
 
 EXPOSE 8000
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers + --forwarded-allow-ips='*': Railway's edge terminates TLS
+# and forwards plain HTTP to this container over its internal network, so
+# without trusting X-Forwarded-Proto here, request.url_for() in auth.py
+# builds http:// URLs and Google rejects the OAuth callback as a
+# redirect_uri_mismatch against the https:// one actually registered.
+# Safe to trust unconditionally here — Railway's proxy is the only thing
+# that can reach this container; it's never directly internet-facing.
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]

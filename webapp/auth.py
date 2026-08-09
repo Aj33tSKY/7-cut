@@ -21,7 +21,7 @@ oauth.register(
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
     client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID", ""),
     client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", ""),
-    client_kwargs={"scope": "openid email profile", "hd": ALLOWED_DOMAIN or None},
+    client_kwargs={"scope": "openid email profile"},
 )
 
 router = APIRouter()
@@ -29,8 +29,21 @@ router = APIRouter()
 
 @router.get("/login")
 async def login(request: Request):
+    # Railway (like most PaaS) terminates HTTPS at its edge and forwards plain
+    # HTTP internally; without trusting X-Forwarded-Proto (see Dockerfile's
+    # --proxy-headers) this would build an http:// callback URL here, which
+    # Google rejects as a mismatch against the https:// one actually
+    # registered. request.url_for reflects whatever scheme uvicorn believes
+    # the request arrived on.
     redirect_uri = request.url_for("auth_callback")
-    return await oauth.google.authorize_redirect(request, redirect_uri, hd=ALLOWED_DOMAIN or None)
+
+    # prompt=select_account always shows Google's account chooser, instead of
+    # silently authenticating with whatever Google session happens to already
+    # be active in the browser.
+    extra = {"prompt": "select_account"}
+    if ALLOWED_DOMAIN:
+        extra["hd"] = ALLOWED_DOMAIN
+    return await oauth.google.authorize_redirect(request, redirect_uri, **extra)
 
 
 @router.get("/auth/callback", name="auth_callback")
