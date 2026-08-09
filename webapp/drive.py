@@ -1,11 +1,22 @@
-"""Google Drive client — service account, walks a nested client/batch/video
-tree, reads each video's raw/ subfolder, writes to its cut/ subfolder.
+"""Google Drive client — a real user's OAuth credential (not a service
+account), walks a nested client/batch/video tree, reads each video's raw/
+subfolder, writes to its cut/ subfolder.
 
-Deliberately decoupled from whoever's logged in (see auth.py): a session
-expiring mid-render can't orphan a job or block an upload. The service
-account only needs to be a member of (or shared on) the single root folder
-— Drive permissions inherit down the whole tree, current and future
-subfolders alike.
+Deliberately NOT a service account: service accounts have zero personal
+storage quota, and Drive attributes a newly-created file's storage to
+whoever's credential created it — so a service account uploading into a
+folder it doesn't own fails with storageQuotaExceeded (reads/lists/
+downloads are unaffected; only creating new files consumes quota). Google's
+own fix (Shared Drives, or domain-wide delegation) both require Google
+Workspace. This runs on personal Google accounts instead, so uploads use a
+real user's OAuth refresh token — see get_drive_refresh_token.py — and
+count against that account's real quota, same as uploading by hand. That
+also means Drive access is decoupled from whoever's logged into the
+dashboard (see auth.py): a session expiring mid-render can't orphan a job.
+The Drive account (whichever one authorized get_drive_refresh_token.py)
+just needs to be a member of (or shared on) the single root folder — Drive
+permissions inherit down the whole tree, current and future subfolders
+alike.
 
 Project convention: an arbitrary-depth tree (e.g. CLIENT/BATCH/VIDEO) where
 a "project" is any folder that directly contains both a raw/ and a cut/
@@ -25,11 +36,10 @@ of sharing one; credentials themselves are safe to share (self._creds).
 from __future__ import annotations
 
 import io
-import json
 import time
 from pathlib import Path
 
-from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import Resource, build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
@@ -62,19 +72,19 @@ def _with_retry(fn, *args, **kwargs):
 
 
 class DriveClient:
-    def __init__(self, service_account_json: str):
-        """service_account_json is the *contents* of the key file (what you
-        paste into GOOGLE_SERVICE_ACCOUNT_JSON on Railway — there's no
-        filesystem to point a path at). A real file path also works, for
-        local dev where that's more convenient."""
-        stripped = service_account_json.strip()
-        if stripped.startswith("{"):
-            info = json.loads(stripped)
-            self._creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
-        else:
-            self._creds = service_account.Credentials.from_service_account_file(
-                service_account_json, scopes=SCOPES
-            )
+    def __init__(self, client_id: str, client_secret: str, refresh_token: str):
+        """refresh_token comes from a one-time run of get_drive_refresh_token.py
+        by whichever real Google account should own uploaded files. No access
+        token is needed up front — google-auth fetches one automatically on
+        first use and refreshes it as needed from here on."""
+        self._creds = Credentials(
+            token=None,
+            refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=SCOPES,
+        )
 
     def _service(self) -> Resource:
         """A fresh service (and transport) per call — see module docstring."""

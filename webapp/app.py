@@ -33,9 +33,11 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 async def lifespan(app: FastAPI):
     await asyncio.to_thread(db.init_db)
 
-    creds_path = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
-    if creds_path:
-        worker.set_drive_client(DriveClient(creds_path))
+    client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET")
+    refresh_token = os.environ.get("GOOGLE_DRIVE_REFRESH_TOKEN")
+    if client_id and client_secret and refresh_token:
+        worker.set_drive_client(DriveClient(client_id, client_secret, refresh_token))
 
     await worker.recover_interrupted_jobs()
     dispatcher_task = asyncio.create_task(worker.dispatcher_loop())
