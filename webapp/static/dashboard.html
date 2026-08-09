@@ -2,72 +2,88 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>video-use</title>
+<title>7-cut</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: light;
+    --bg: hsla(0,0%,91%,1);
+    --surface: #ffffff;
+    --border: rgba(0,0,0,0.09);
+    --text: #121212;
+    --muted: #6d6d6d;
+    --faint: #9a9a9a;
+    --black: #111111;
+    --black-hover: #2c2c2c;
+  }
   * { box-sizing: border-box; }
   body {
-    margin: 0; background: #15161a; color: #e6e6e6;
-    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 "Space Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
   }
+  h1, h2, .brand { font-family: "Unbounded", sans-serif; font-weight: 700; }
   .mono { font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace; }
 
   header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 16px 24px; border-bottom: 1px solid #2a2b31; background: #1b1c21;
+    padding: 26px 36px; border-bottom: 1px solid var(--border);
   }
-  header h1 { font-size: 16px; margin: 0; font-weight: 700; }
-  header .who { display: flex; align-items: center; gap: 14px; font-size: 12.5px; color: #9a9ba3; }
-  header a { color: #9a9ba3; text-decoration: none; }
-  header a:hover { color: #e6e6e6; }
+  header h1.brand {
+    font-size: 30px; margin: 0; letter-spacing: -0.01em; color: var(--black);
+  }
+  header .who { display: flex; align-items: center; gap: 18px; font-size: 13px; color: var(--muted); }
+  header a { color: var(--muted); text-decoration: none; }
+  header a:hover { color: var(--text); }
 
-  main { max-width: 880px; margin: 0 auto; padding: 28px 24px 80px; }
+  main { max-width: 920px; margin: 0 auto; padding: 40px 24px 100px; }
 
-  .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-  .toolbar h2 { font-size: 15px; margin: 0; }
-  .toolbar .sub { color: #6a6b73; font-size: 12.5px; }
+  .toolbar { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 22px; }
+  .toolbar h2 { font-size: 26px; margin: 0; color: var(--black); }
+  .toolbar .sub { color: var(--faint); font-size: 12.5px; }
 
-  .empty { color: #6a6b73; padding: 40px 0; text-align: center; font-size: 13px; }
+  .empty {
+    color: var(--muted); padding: 56px 24px; text-align: center; font-size: 14px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+  }
 
-  ul.projects { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  ul.projects { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
   li.project {
-    display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 16px;
-    background: #1b1c21; border: 1px solid #2a2b31; border-radius: 8px; padding: 14px 16px;
+    display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 18px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 18px 22px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
   }
-  .project .name { font-weight: 600; font-size: 13.5px; }
-  .project .meta { color: #6a6b73; font-size: 11.5px; margin-top: 2px; }
-  .project .error { color: #e0604a; font-size: 11.5px; margin-top: 4px; max-width: 46ch; }
+  .project .name { font-weight: 600; font-size: 15px; }
+  .project .meta { color: var(--faint); font-size: 12px; margin-top: 3px; }
+  .project .error { color: #c0392b; font-size: 12px; margin-top: 5px; max-width: 46ch; }
 
   .chip {
     font-family: ui-monospace, "SF Mono", monospace; font-size: 11px; font-weight: 600;
-    letter-spacing: 0.02em; padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+    letter-spacing: 0.02em; padding: 4px 11px; border-radius: 999px; white-space: nowrap;
   }
   .chip::before { content: "●"; margin-right: 5px; font-size: 8px; }
-  .chip.idle { background: #26272d; color: #8b8d96; }
-  .chip.progress { background: #23324f; color: #7fa8ff; }
+  .chip.idle { background: #e4e4e4; color: #6b6b6b; }
+  .chip.progress { background: #dfe7ff; color: #2f57d6; }
   .chip.progress::before { animation: pulse 1.2s ease-in-out infinite; }
-  .chip.review { background: #3a2416; color: #ffb48a; }
-  .chip.done { background: #163a2c; color: #4fbe93; }
-  .chip.failed { background: #3a1e1a; color: #e0604a; }
+  .chip.review { background: #ffe4cf; color: #b6560f; }
+  .chip.done { background: #d9f2e3; color: #1c8a55; }
+  .chip.failed { background: #fbdedb; color: #c0392b; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
   button {
-    background: #2a2b31; color: #e6e6e6; border: 1px solid #3a3b42;
-    border-radius: 6px; padding: 7px 14px; cursor: pointer; font-size: 12.5px;
-    font-family: inherit;
+    background: var(--black); color: #fff; border: none;
+    border-radius: 999px; padding: 12px 26px; cursor: pointer; font-size: 13.5px;
+    font-weight: 600; font-family: "Space Grotesk", inherit;
   }
-  button:hover { background: #34353c; }
-  button:disabled { opacity: 0.4; cursor: default; }
-  button.primary { background: #3a6ff0; border-color: #3a6ff0; }
-  button.primary:hover { background: #4a7cff; }
-  button.review-btn { background: #ff5a00; border-color: #ff5a00; }
-  button.review-btn:hover { background: #ff7a2e; }
+  button:hover { background: var(--black-hover); }
+  button:disabled { opacity: 0.35; cursor: default; }
   a.btn-link { text-decoration: none; }
 </style>
 </head>
 <body>
 <header>
-  <h1>video-use</h1>
+  <h1 class="brand">7-cut</h1>
   <div class="who">
     <span id="userEmail" class="mono"></span>
     <a href="/logout">Sign out</a>
@@ -109,13 +125,13 @@ function queueAttrs(project) {
 function actionFor(project) {
   const job = project.job;
   if (!job) {
-    return `<button class="primary" ${queueAttrs(project)}>Queue</button>`;
+    return `<button ${queueAttrs(project)}>Queue</button>`;
   }
   if (job.status === 'awaiting_review') {
-    return `<a class="btn-link" href="/review/${job.id}"><button class="review-btn">Review →</button></a>`;
+    return `<a class="btn-link" href="/review/${job.id}"><button>Review →</button></a>`;
   }
   if (job.status === 'failed') {
-    return `<button class="primary" ${queueAttrs(project)}>Retry</button>`;
+    return `<button ${queueAttrs(project)}>Retry</button>`;
   }
   if (job.status === 'done') {
     return `<button ${queueAttrs(project)}>Re-cut</button>`;

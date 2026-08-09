@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
     dispatcher_task.cancel()
 
 
-app = FastAPI(title="video-use", lifespan=lifespan)
+app = FastAPI(title="7-cut", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SESSION_SECRET", "dev-secret-change-me"))
 
 app.include_router(auth_router)

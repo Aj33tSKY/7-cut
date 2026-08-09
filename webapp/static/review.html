@@ -2,83 +2,98 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Cut Review</title>
+<title>7-cut — Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: light;
+    --bg: hsla(0,0%,91%,1);
+    --surface: #ffffff;
+    --border: rgba(0,0,0,0.09);
+    --text: #121212;
+    --muted: #6d6d6d;
+    --faint: #9a9a9a;
+    --black: #111111;
+    --black-hover: #2c2c2c;
+  }
   * { box-sizing: border-box; }
   body {
-    margin: 0; background: #15161a; color: #e6e6e6;
-    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.4 "Space Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
   }
   #app { display: flex; flex-direction: column; height: 100vh; }
 
   #stage {
     flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
-    background: #0b0c0e; padding: 16px;
+    background: #0b0c0e; padding: 20px;
   }
-  #player { max-width: 100%; max-height: 100%; background: black; }
+  #player { max-width: 100%; max-height: 100%; background: black; border-radius: 10px; }
 
   #controls {
-    display: flex; align-items: center; gap: 10px; padding: 8px 14px;
-    border-top: 1px solid #2a2b31; background: #1b1c21;
+    display: flex; align-items: center; gap: 12px; padding: 14px 22px;
+    border-top: 1px solid var(--border); background: var(--surface);
   }
   a.back {
-    color: #9a9ba3; text-decoration: none; font-size: 12px; padding: 5px 8px;
+    font-family: "Unbounded", sans-serif; font-weight: 700;
+    color: var(--text); text-decoration: none; font-size: 14px; padding: 6px 10px;
   }
-  a.back:hover { color: #e6e6e6; }
+  a.back:hover { color: var(--muted); }
   button {
-    background: #2a2b31; color: #e6e6e6; border: 1px solid #3a3b42;
-    border-radius: 5px; padding: 5px 12px; cursor: pointer; font-size: 12px;
+    background: var(--black); color: #fff; border: none;
+    border-radius: 999px; padding: 10px 20px; cursor: pointer; font-size: 13.5px;
+    font-weight: 600; font-family: "Space Grotesk", inherit;
   }
-  button:hover { background: #34353c; }
-  button:disabled { opacity: 0.4; cursor: default; }
-  button.primary { background: #3a6ff0; border-color: #3a6ff0; }
-  button.primary:hover { background: #4a7cff; }
-  button.render { background: #ff5a00; border-color: #ff5a00; }
-  button.render:hover { background: #ff7a2e; }
-  #time { font-variant-numeric: tabular-nums; color: #9a9ba3; }
-  #status { margin-left: auto; color: #9a9ba3; }
-  #hint { padding: 4px 14px; color: #6a6b73; font-size: 11px; background: #1b1c21; border-top: 1px solid #232429; }
+  button:hover { background: var(--black-hover); }
+  button:disabled { opacity: 0.35; cursor: default; }
+  #playBtn { padding: 10px 16px; font-size: 15px; }
+  #time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
+  #status { margin-left: auto; color: var(--muted); font-size: 13px; }
+  #hint {
+    padding: 7px 22px; color: var(--faint); font-size: 12px;
+    background: var(--surface); border-top: 1px solid var(--border);
+  }
 
-  #timelineWrap { background: #1b1c21; border-top: 1px solid #2a2b31; }
-  #timelineScroll { overflow-x: auto; overflow-y: hidden; position: relative; padding: 8px 0 14px; }
-  #ruler { position: relative; height: 16px; margin-left: 0; }
+  #timelineWrap { background: var(--surface); border-top: 1px solid var(--border); }
+  #timelineScroll { overflow-x: auto; overflow-y: hidden; position: relative; padding: 10px 0 18px; }
+  #ruler { position: relative; height: 18px; margin-left: 0; }
   .tick {
-    position: absolute; top: 0; font-size: 10px; color: #6a6b73;
-    border-left: 1px solid #34353c; padding-left: 3px; height: 100%;
+    position: absolute; top: 0; font-size: 10.5px; color: var(--faint);
+    border-left: 1px solid rgba(0,0,0,0.15); padding-left: 4px; height: 100%;
   }
-  #trackOuter { position: relative; height: 64px; margin: 4px 0 0; }
-  #track { position: relative; height: 64px; }
+  #trackOuter { position: relative; height: 74px; margin: 5px 0 0; }
+  #track { position: relative; height: 74px; }
   #playhead {
-    position: absolute; top: 0; bottom: -14px; width: 1px; background: #ff4d4d;
+    position: absolute; top: 0; bottom: -16px; width: 2px; background: #ff4d4d;
     pointer-events: none; z-index: 20;
   }
   #playhead::before {
-    content: ""; position: absolute; top: -4px; left: -4px; width: 9px; height: 9px;
+    content: ""; position: absolute; top: -5px; left: -5px; width: 11px; height: 11px;
     background: #ff4d4d; border-radius: 50%;
   }
 
   .clip {
-    position: absolute; top: 0; height: 64px; border-radius: 4px;
-    border: 1px solid rgba(255,255,255,0.12); overflow: hidden; cursor: grab;
+    position: absolute; top: 0; height: 74px; border-radius: 6px;
+    border: 1px solid rgba(0,0,0,0.15); overflow: hidden; cursor: grab;
     display: flex; align-items: flex-end;
   }
-  .clip.selected { outline: 2px solid #3a6ff0; outline-offset: -1px; }
+  .clip.selected { outline: 2.5px solid #3a6ff0; outline-offset: -1px; }
   .clip-label {
-    font-size: 10px; padding: 3px 4px; color: rgba(255,255,255,0.85);
-    background: rgba(0,0,0,0.35); width: 100%; white-space: nowrap; overflow: hidden;
+    font-size: 10.5px; padding: 4px 5px; color: rgba(255,255,255,0.9);
+    background: rgba(0,0,0,0.4); width: 100%; white-space: nowrap; overflow: hidden;
     text-overflow: ellipsis; pointer-events: none;
   }
   .handle {
-    position: absolute; top: 0; bottom: 0; width: 7px; cursor: ew-resize;
-    background: rgba(255,255,255,0.08);
+    position: absolute; top: 0; bottom: 0; width: 9px; cursor: ew-resize;
+    background: rgba(255,255,255,0.1);
   }
-  .handle:hover { background: rgba(255,255,255,0.25); }
+  .handle:hover { background: rgba(255,255,255,0.3); }
   .handle-l { left: 0; } .handle-r { right: 0; }
   .del {
-    position: absolute; top: 2px; right: 2px; width: 14px; height: 14px; line-height: 13px;
-    text-align: center; font-size: 11px; border-radius: 3px; background: rgba(0,0,0,0.45);
-    cursor: pointer; opacity: 0; transition: opacity 0.1s;
+    position: absolute; top: 3px; right: 3px; width: 17px; height: 17px; line-height: 16px;
+    text-align: center; font-size: 13px; border-radius: 5px; background: rgba(0,0,0,0.5);
+    color: #fff; cursor: pointer; opacity: 0; transition: opacity 0.1s;
   }
   .clip:hover .del { opacity: 1; }
   .del:hover { background: #c0392b; }
@@ -88,14 +103,14 @@
 <div id="app">
   <div id="stage"><video id="player" playsinline></video></div>
   <div id="controls">
-    <a class="back" href="/">← Dashboard</a>
+    <a class="back" href="/">← 7-cut</a>
     <button id="playBtn">▶</button>
     <button id="splitBtn">Split (S)</button>
     <button id="undoBtn">Undo (⌘Z)</button>
     <span id="time">0:00.00 / 0:00.00</span>
     <span id="status"></span>
-    <button id="saveBtn" class="primary" disabled>Save</button>
-    <button id="renderBtn" class="render">Render →</button>
+    <button id="saveBtn" disabled>Save</button>
+    <button id="renderBtn">Render →</button>
   </div>
   <div id="hint">drag clip edges to trim &middot; drag a clip to reorder &middot; click timeline to seek &middot; S splits at playhead &middot; Del removes selected &middot; Space play/pause</div>
   <div id="timelineWrap">
