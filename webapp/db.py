@@ -1,13 +1,25 @@
 """SQLite job store.
 
-One table, WAL mode. WAL is the actual lever for concurrent job status
-writes not blocking reads (the dashboard polling while jobs update) — not
-the choice of database engine. See webapp/README.md for the reasoning.
+One table, plain rollback-journal mode (SQLite's default) — deliberately
+NOT WAL. WAL requires memory-mapped shared-memory files, which are
+documented as unreliable over network-backed filesystems — exactly what a
+Railway (or most PaaS) persistent volume is. At this app's write volume
+(a handful of status UPDATEs per second, at most, across a ~10-person team)
+WAL's actual benefit — readers not blocking on a writer — isn't needed;
+correctness/compatibility with the volume matters more than that.
 
 sqlite3 connections aren't safe to share across threads by default; we open
 one connection per call with check_same_thread=False and serialize writes
-behind a process-wide lock, which is plenty at this scale (a handful of
-short UPDATEs per second, at most).
+behind a process-wide lock.
+
+Every function here is synchronous/blocking. Callers in async code MUST
+wrap calls in asyncio.to_thread — a stuck disk operation (even a normal
+latency spike on network-backed storage) must never be allowed to freeze
+the event loop, since that would also freeze unrelated things like the
+platform's healthcheck endpoint and look like the whole app crashed.
+worker.py's dispatcher_loop is the one call site that runs unconditionally
+every couple of seconds forever — if any db call were ever going to freeze
+the loop, that periodic tick is what would surface it.
 """
 
 from __future__ import annotations
@@ -30,7 +42,6 @@ _write_lock = threading.Lock()
 def _connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10)
-    conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA busy_timeout=5000;")
     conn.row_factory = sqlite3.Row
     return conn
@@ -38,6 +49,16 @@ def _connect() -> sqlite3.Connection:
 
 def init_db() -> None:
     with _connect() as conn:
+        # journal_mode is a persistent property of the database FILE, not a
+        # per-connection setting — if this file was ever opened in WAL mode
+        # (true for jobs.db on volumes that already existed before this
+        # change), it silently STAYS in WAL mode forever unless explicitly
+        # switched back, regardless of what future connections request.
+        # DELETE is SQLite's traditional default rollback journal.
+        current_mode = conn.execute("PRAGMA journal_mode;").fetchone()[0]
+        if current_mode.lower() != "delete":
+            conn.execute("PRAGMA journal_mode=DELETE;")
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS jobs (
                 id TEXT PRIMARY KEY,

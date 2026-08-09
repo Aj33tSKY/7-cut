@@ -24,8 +24,9 @@ async def list_projects(user: dict = Depends(current_user)):
     # directly in this async handler would stall the whole event loop,
     # including every in-flight job, for however long the walk takes.
     drive_projects = await asyncio.to_thread(worker._drive_client.list_projects, DRIVE_ROOT_FOLDER_ID)
+    all_jobs = await asyncio.to_thread(db.list_jobs)
     jobs_by_folder = {}
-    for job in db.list_jobs():
+    for job in all_jobs:
         jobs_by_folder.setdefault(job.drive_folder_id, job)  # most recent (list is DESC)
 
     out = []
@@ -50,7 +51,8 @@ async def queue_project(video_folder_id: str, request: Request, user: dict = Dep
     if not (path and raw_folder_id and cut_folder_id):
         raise HTTPException(400, "path, raw_folder_id, and cut_folder_id are required")
 
-    job = db.create_job(
+    job = await asyncio.to_thread(
+        db.create_job,
         drive_folder_id=video_folder_id,
         drive_raw_folder_id=raw_folder_id,
         drive_cut_folder_id=cut_folder_id,

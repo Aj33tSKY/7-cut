@@ -31,13 +31,13 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    db.init_db()
+    await asyncio.to_thread(db.init_db)
 
     creds_path = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
     if creds_path:
         worker.set_drive_client(DriveClient(creds_path))
 
-    worker.recover_interrupted_jobs()
+    await worker.recover_interrupted_jobs()
     dispatcher_task = asyncio.create_task(worker.dispatcher_loop())
     yield
     dispatcher_task.cancel()

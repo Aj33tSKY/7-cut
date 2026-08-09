@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import mimetypes
 import re
@@ -28,8 +29,8 @@ router = APIRouter(prefix="/api/jobs")
 RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 
 
-def _get_job_or_404(job_id: str):
-    job = db.get_job(job_id)
+async def _get_job_or_404(job_id: str):
+    job = await asyncio.to_thread(db.get_job, job_id)
     if not job:
         raise HTTPException(404, "job not found")
     return job
@@ -49,25 +50,27 @@ def _probe_duration(path: Path) -> float | None:
 
 @router.get("")
 async def list_jobs(user: dict = Depends(current_user)):
-    return [j.to_dict() for j in db.list_jobs()]
+    jobs = await asyncio.to_thread(db.list_jobs)
+    return [j.to_dict() for j in jobs]
 
 
 @router.get("/{job_id}")
 async def get_job(job_id: str, user: dict = Depends(current_user)):
-    return _get_job_or_404(job_id).to_dict()
+    job = await _get_job_or_404(job_id)
+    return job.to_dict()
 
 
 @router.delete("/{job_id}")
 async def delete_job(job_id: str, user: dict = Depends(current_user)):
-    _get_job_or_404(job_id)
-    db.delete_job(job_id)
+    await _get_job_or_404(job_id)
+    await asyncio.to_thread(db.delete_job, job_id)
     shutil.rmtree(worker.job_dir(job_id), ignore_errors=True)
     return {"ok": True}
 
 
 @router.get("/{job_id}/edl")
 async def get_edl(job_id: str, user: dict = Depends(current_user)):
-    job = _get_job_or_404(job_id)
+    job = await _get_job_or_404(job_id)
     edl_path = worker.edit_dir(job_id) / "edl.json"
     if not edl_path.exists():
         raise HTTPException(409, f"no edl yet — job status is {job.status.value}")
@@ -87,7 +90,7 @@ async def get_edl(job_id: str, user: dict = Depends(current_user)):
 
 @router.post("/{job_id}/save")
 async def save_edl(job_id: str, request: Request, user: dict = Depends(current_user)):
-    job = _get_job_or_404(job_id)
+    await _get_job_or_404(job_id)
     body = await request.json()
     ranges = body.get("ranges")
     if not isinstance(ranges, list) or not ranges:
@@ -154,7 +157,7 @@ async def get_media(job_id: str, source_name: str, request: Request, user: dict 
 
 @router.post("/{job_id}/render")
 async def start_render(job_id: str, user: dict = Depends(current_user)):
-    job = _get_job_or_404(job_id)
+    job = await _get_job_or_404(job_id)
     if job.status != JobStatus.AWAITING_REVIEW:
         raise HTTPException(409, f"job is {job.status.value}, not awaiting_review")
     worker.dispatch(job_id, finish=True)
