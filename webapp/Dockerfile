@@ -27,9 +27,13 @@ EXPOSE 8000
 # Safe to trust unconditionally here — Railway's proxy is the only thing
 # that can reach this container; it's never directly internet-facing.
 #
-# Shell form (not exec-form JSON array) so ${PORT:-8000} actually expands:
-# Railway always injects its own PORT and routes/healthchecks against that
-# specific port, whether or not you set one yourself — a hardcoded port
-# here works only by coincidence if it happens to match. Falls back to
-# 8000 for local `docker run` where PORT isn't set.
-CMD uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'
+# Fixed port, deliberately NOT ${PORT:-8000}: Railway's generated domain
+# routes to a fixed target port (visible in its Networking settings) that
+# does not automatically follow a dynamically-assigned $PORT across
+# restarts. Binding to whatever $PORT Railway handed the container at
+# that moment (confirmed varying — 8080 was observed in one run) made the
+# app unreachable from the public URL whenever it didn't happen to match
+# the domain's fixed target. Match that fixed value here instead — it's
+# shown as "Port 8000" in Networking settings; keep both in sync if it's
+# ever changed there.
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
