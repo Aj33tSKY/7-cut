@@ -31,7 +31,10 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Node / Remotion (installed on demand, not vendored)
+# webapp — job workspaces + sqlite db are runtime state, not source
+webapp/data/
+
+# Node (rarely needed; nothing in this repo requires it by default)
 node_modules/
 package-lock.json
 yarn.lock

@@ -12,15 +12,12 @@ Try video-use in [Browser Use Cloud](https://cloud.browser-use.com/v4?utm_campai
 
 ## What it does
 
-- **Cuts out filler words** (`umm`, `uh`, false starts) and dead space between takes
+- **Cuts out filler words** (`umm`, `uh`, false starts) and dead space between takes, driven entirely by word-level speech-to-text (ElevenLabs Scribe) — no frame-by-frame video analysis
 - **Script-aligned ordering** — drop clips in any order + a `script.md`; the pipeline reorders by script position using fuzzy matching
 - **Retake deduplication** — single-clip multiple attempts are detected and deduplicated automatically
-- **Animated karaoke captions** — word-by-word highlighting with 5 style presets (CapCut, neon, handwritten, etc.) and phrase or one-word-at-a-time modes
-- **Overlay transitions** — 8 presets (film burn, glitch, glare, warp, swipe, ink, etc.) rendered as transparent overlays at clip boundaries
+- **Local review UI** — a lightweight browser page (no external services) to scrub the cut, trim/split/reorder/delete clips with synced video+audio, and save changes straight back to the edit decision list
 - **Auto color grades** every segment (warm cinematic, neutral punch, or any custom ffmpeg chain)
 - **30ms audio fades** at every cut so you never hear a pop
-- **Burns subtitles** in your style — 2-word UPPERCASE chunks by default, fully customizable
-- **Generates animation overlays** via [HyperFrames](https://github.com/heygen-com/hyperframes), [Remotion](https://www.remotion.dev/), [Manim](https://www.manim.community/), or PIL — spawned in parallel sub-agents, one per animation
 - **Self-evaluates the rendered output** at every cut boundary before showing you anything
 - **Persists session memory** in `project.md` so next week's session picks up where you left off
 
@@ -63,28 +60,15 @@ Just put your clips + a `script.md` in a folder. The pipeline:
 1. Transcribes every clip (ElevenLabs Scribe, word-level, cached)
 2. Orders clips by script position using fuzzy matching
 3. Removes fillers, silence, and duplicate retakes
-4. Generates animated karaoke captions with overlay transitions
-5. Renders to `edit/final.mp4`
+4. Renders to `edit/final.mp4`
 
-### Caption styles & transitions
+Add `--review` to stop after cutting and open the local review UI instead of rendering straight through — adjust the cuts in your browser, save, then render manually:
 
 ```bash
-# CapCut-style bold outline + film burn transitions (default)
-python helpers/pipeline.py project/ --caption-style bold-outline --transition film-burn
-
-# One-word-at-a-time with neon glow + glitch transitions
-python helpers/pipeline.py project/ --caption-mode word --caption-style neon --transition glitch
-
-# Handwritten style with glare transitions
-python helpers/pipeline.py project/ --caption-style handwritten --transition glare
-
-# No captions at all
-python helpers/pipeline.py project/ --no-captions
+python helpers/pipeline.py project/ --review
+# ... review, trim, save in the browser ...
+python helpers/render.py project/edit/edl.json -o project/edit/final.mp4
 ```
-
-**Styles:** `clean`, `bold-outline`, `pop`, `neon`, `handwritten`
-**Modes:** `phrase` (karaoke groups), `word` (one at a time)
-**Transitions:** `flash`, `swipe`, `film-burn`, `glare`, `glitch`, `warp`, `stripe-wipe`, `ink`, `none`
 
 ## Manual install
 
@@ -138,7 +122,7 @@ Transcribe ──> Pack ──> LLM Reasons ──> EDL ──> Render ──> S
                                                               └─ issue? fix + re-render (max 3)
 ```
 
-The self-eval loop runs `timeline_view` on the _rendered output_ at every cut boundary — catches visual jumps, audio pops, hidden subtitles. You see the preview only after it passes.
+The self-eval loop runs `timeline_view` on the _rendered output_ at every cut boundary — catches visual jumps and audio pops. You see the preview only after it passes.
 
 ## Design principles
 

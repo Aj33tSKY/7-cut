@@ -1,22 +1,15 @@
-"""Render a video from an EDL.
-
-Implements the HEURISTICS render pipeline in the correct order:
+"""Render a trimmed video from an EDL.
 
   1. Per-segment extract with color grade + 30ms audio fades baked in
+     (Rule: extract → concat, never a single-pass filtergraph — otherwise
+     every segment gets double-encoded)
   2. Lossless -c copy concat into base.mp4
-  3. If overlays or subtitles: single filter graph that overlays animations
-     (with PTS shift so frame 0 lands at the overlay window start)
-     and applies `subtitles` filter LAST → final.mp4
-
-Optionally builds a master SRT from the per-source transcripts + EDL
-output-timeline offsets, applies the proven force_style (2-word
-UPPERCASE chunks, Helvetica 18 Bold, MarginV=35).
+  3. Loudness normalization (-14 LUFS / -1 dBTP / LRA 11) → final.mp4
 
 Usage:
     python helpers/render.py <edl.json> -o final.mp4
     python helpers/render.py <edl.json> -o preview.mp4 --preview
-    python helpers/render.py <edl.json> -o final.mp4 --build-subtitles
-    python helpers/render.py <edl.json> -o final.mp4 --no-subtitles
+    python helpers/render.py <edl.json> -o final.mp4 --no-loudnorm
 """
 
 from __future__ import annotations
@@ -37,23 +30,6 @@ except Exception:
     def auto_grade_for_clip(video, start=0.0, duration=None, verbose=False):  # type: ignore
         return "eq=contrast=1.03:saturation=0.98", {}
 
-
-# -------- Subtitle style (bold-overlay, proven at 1920×1080 and 1080×1920) --
-#
-# MarginV is NOT taste — it is a platform safe-zone rule.
-# TikTok / IG Reels / Shorts UI (caption, username, music, right-rail actions)
-# covers roughly the bottom ~25–30% of a 1080×1920 frame. Captions placed near
-# the bottom edge get clipped or obscured by the UI. libass auto-scales the
-# render canvas relative to PlayResY=288, so MarginV=90 lands the caption
-# baseline roughly 30% up from the bottom on any aspect — clear of the UI on
-# every major vertical-video platform. Do not drop this below ~75 without a
-# specific reason.
-SUB_FORCE_STYLE = (
-    "FontName=Helvetica,FontSize=18,Bold=1,"
-    "PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,"
-    "BorderStyle=1,Outline=2,Shadow=0,"
-    "Alignment=2,MarginV=90"
-)
 
 # -------- Helpers ------------------------------------------------------------
 
@@ -283,105 +259,6 @@ def concat_segments(segment_paths: list[Path], out_path: Path, edit_dir: Path) -
     concat_list.unlink(missing_ok=True)
 
 
-# -------- Master SRT (Rule 5) ------------------------------------------------
-
-
-PUNCT_BREAK = set(".,!?;:")
-
-
-def _srt_timestamp(seconds: float) -> str:
-    total_ms = int(round(seconds * 1000))
-    h, rem = divmod(total_ms, 3600_000)
-    m, rem = divmod(rem, 60_000)
-    s, ms = divmod(rem, 1000)
-    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
-
-
-def _words_in_range(transcript: dict, t_start: float, t_end: float) -> list[dict]:
-    out: list[dict] = []
-    for w in transcript.get("words", []):
-        if w.get("type") != "word":
-            continue
-        ws = w.get("start")
-        we = w.get("end")
-        if ws is None or we is None:
-            continue
-        if we <= t_start or ws >= t_end:
-            continue
-        out.append(w)
-    return out
-
-
-def build_master_srt(edl: dict, edit_dir: Path, out_path: Path) -> None:
-    """Build an output-timeline SRT from per-source transcripts.
-
-    - 2-word chunks (break on any punctuation in between)
-    - UPPERCASE text
-    - Output times computed as word.start - segment_start + segment_offset
-    """
-    transcripts_dir = edit_dir / "transcripts"
-    sources = edl["sources"]
-
-    entries: list[tuple[float, float, str]] = []
-    seg_offset = 0.0
-
-    for r in edl["ranges"]:
-        src_name = r["source"]
-        seg_start = float(r["start"])
-        seg_end = float(r["end"])
-        seg_duration = seg_end - seg_start
-
-        tr_path = transcripts_dir / f"{src_name}.json"
-        if not tr_path.exists():
-            print(f"  no transcript for {src_name}, skipping captions for this segment")
-            seg_offset += seg_duration
-            continue
-
-        transcript = json.loads(tr_path.read_text())
-        words_in_seg = _words_in_range(transcript, seg_start, seg_end)
-
-        # Group into 2-word chunks, break on punctuation
-        chunks: list[list[dict]] = []
-        current: list[dict] = []
-        for w in words_in_seg:
-            text = (w.get("text") or "").strip()
-            if not text:
-                continue
-            current.append(w)
-            # Break if the current text ends in punctuation or we hit 2 words
-            ends_in_punct = bool(text) and text[-1] in PUNCT_BREAK
-            if len(current) >= 2 or ends_in_punct:
-                chunks.append(current)
-                current = []
-        if current:
-            chunks.append(current)
-
-        for chunk in chunks:
-            local_start = max(seg_start, chunk[0].get("start", seg_start))
-            local_end = min(seg_end, chunk[-1].get("end", seg_end))
-            out_start = max(0.0, local_start - seg_start) + seg_offset
-            out_end = max(0.0, local_end - seg_start) + seg_offset
-            if out_end <= out_start:
-                out_end = out_start + 0.4
-            text = " ".join((w.get("text") or "").strip() for w in chunk)
-            text = re.sub(r"\s+", " ", text).strip()
-            # Strip trailing punctuation for cleaner uppercase look
-            text = text.rstrip(",;:")
-            text = text.upper()
-            entries.append((out_start, out_end, text))
-
-        seg_offset += seg_duration
-
-    # Sort and write as SRT
-    entries.sort(key=lambda e: e[0])
-    lines: list[str] = []
-    for i, (a, b, t) in enumerate(entries, start=1):
-        lines.append(str(i))
-        lines.append(f"{_srt_timestamp(a)} --> {_srt_timestamp(b)}")
-        lines.append(t)
-        lines.append("")
-    out_path.write_text("\n".join(lines))
-    print(f"master SRT → {out_path.name} ({len(entries)} cues)")
 
 
 # -------- Loudness normalization (social-ready audio) -----------------------
@@ -489,86 +366,6 @@ def apply_loudnorm_two_pass(
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     return True
 
-
-# -------- Final compositing (Rule 1 + Rule 4) -------------------------------
-
-
-def build_final_composite(
-    base_path: Path,
-    overlays: list[dict],
-    subtitles_path: Path | None,
-    out_path: Path,
-    edit_dir: Path,
-) -> None:
-    """Final pass: base → overlays (PTS-shifted) → subtitles LAST → out.
-
-    If there are no overlays and no subtitles, just copy base to out.
-    """
-    has_overlays = bool(overlays)
-    has_subs = subtitles_path is not None and subtitles_path.exists()
-
-    if not has_overlays and not has_subs:
-        # Nothing to do — just rename/copy base to final name
-        run(["ffmpeg", "-y", "-i", str(base_path), "-c", "copy", str(out_path)], quiet=True)
-        return
-
-    inputs: list[str] = ["-i", str(base_path)]
-    for ov in overlays:
-        ov_path = resolve_path(ov["file"], edit_dir)
-        inputs += ["-i", str(ov_path)]
-
-    filter_parts: list[str] = []
-    # PTS-shift every overlay so its frame 0 lands at start_in_output
-    for idx, ov in enumerate(overlays, start=1):
-        t = float(ov["start_in_output"])
-        filter_parts.append(f"[{idx}:v]setpts=PTS-STARTPTS+{t}/TB[a{idx}]")
-
-    # Chain overlays on top of base
-    current = "[0:v]"
-    for idx, ov in enumerate(overlays, start=1):
-        t = float(ov["start_in_output"])
-        dur = float(ov["duration"])
-        end = t + dur
-        next_label = f"[v{idx}]"
-        filter_parts.append(
-            f"{current}[a{idx}]overlay=enable='between(t,{t:.3f},{end:.3f})'{next_label}"
-        )
-        current = next_label
-
-    # Subtitles LAST — Rule 1
-    if has_subs:
-        subs_abs = str(subtitles_path.resolve()).replace(":", r"\:").replace("'", r"\'")
-        filter_parts.append(
-            f"{current}subtitles='{subs_abs}':force_style='{SUB_FORCE_STYLE}'[outv]"
-        )
-        out_label = "[outv]"
-    else:
-        # Rename the last overlay output to [outv] for consistency
-        if has_overlays:
-            filter_parts.append(f"{current}null[outv]")
-            out_label = "[outv]"
-        else:
-            out_label = "[0:v]"
-
-    filter_complex = ";".join(filter_parts)
-
-    cmd = [
-        "ffmpeg", "-y",
-        *inputs,
-        "-filter_complex", filter_complex,
-        "-map", out_label,
-        "-map", "0:a",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-        "-pix_fmt", "yuv420p",
-        "-c:a", "copy",
-        "-movflags", "+faststart",
-        str(out_path),
-    ]
-    print(f"compositing → {out_path.name}")
-    print(f"  overlays: {len(overlays)}, subtitles: {'yes' if has_subs else 'no'}")
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-
-
 # -------- Main ---------------------------------------------------------------
 
 
@@ -585,16 +382,6 @@ def main() -> None:
         "--draft",
         action="store_true",
         help="Draft mode: 720p, ultrafast, CRF 28 — cut-point verification only.",
-    )
-    ap.add_argument(
-        "--build-subtitles",
-        action="store_true",
-        help="Build master.srt from transcripts + EDL offsets before compositing",
-    )
-    ap.add_argument(
-        "--no-subtitles",
-        action="store_true",
-        help="Skip subtitles even if the EDL references one",
     )
     ap.add_argument(
         "--no-loudnorm",
@@ -626,30 +413,12 @@ def main() -> None:
     base_path = edit_dir / base_name
     concat_segments(segment_paths, base_path, edit_dir)
 
-    # 3. Subtitles: build if requested, resolve final path
-    subs_path: Path | None = None
-    if not args.no_subtitles:
-        if args.build_subtitles:
-            subs_path = edit_dir / "master.srt"
-            build_master_srt(edl, edit_dir, subs_path)
-        elif edl.get("subtitles"):
-            subs_path = resolve_path(edl["subtitles"], edit_dir)
-            if not subs_path.exists():
-                print(f"warning: subtitles path in EDL does not exist: {subs_path}")
-                subs_path = None
-
-    # 4. Composite (overlays + subtitles LAST) → intermediate (pre-loudnorm) path
-    overlays = edl.get("overlays") or []
+    # 3. Loudness normalization → final output
     if args.no_loudnorm:
-        # Composite directly to final output
-        build_final_composite(base_path, overlays, subs_path, out_path, edit_dir)
+        run(["ffmpeg", "-y", "-i", str(base_path), "-c", "copy", str(out_path)], quiet=True)
     else:
-        # Composite to a temp file, then run loudnorm → final output
-        tmp_composite = out_path.with_suffix(".prenorm.mp4")
-        build_final_composite(base_path, overlays, subs_path, tmp_composite, edit_dir)
         print("loudness normalization → social-ready (-14 LUFS / -1 dBTP / LRA 11)")
-        apply_loudnorm_two_pass(tmp_composite, out_path, preview=args.draft)
-        tmp_composite.unlink(missing_ok=True)
+        apply_loudnorm_two_pass(base_path, out_path, preview=args.draft)
 
     size_mb = out_path.stat().st_size / (1024 * 1024)
     print(f"\ndone: {out_path} ({size_mb:.1f} MB)")

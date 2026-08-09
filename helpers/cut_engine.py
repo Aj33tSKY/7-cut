@@ -775,8 +775,6 @@ def build_edl(
         "sources": sources,
         "ranges": clean_ranges,
         "grade": "auto",
-        "overlays": [],
-        "subtitles": None,
         "total_duration_s": round(trimmed_duration, 2),
         "script_alignment": script_alignment,
         "stats": {
