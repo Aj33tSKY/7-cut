@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -171,6 +172,15 @@ def extract_segment(
     else:
         preset, crf = "fast", "20"
 
+    # Cap encoder threads: cloud containers often report the *host's* full
+    # core count (not what the container's cgroup is actually allocated),
+    # so ffmpeg's default "auto" thread count can spawn far more threads
+    # than the container can use — each buffering its own frames. On a
+    # memory-constrained container (e.g. Railway's smaller tiers) that's
+    # enough to spike past the memory limit and get the process OOM-killed,
+    # even though the container's own reported usage looks unremarkable.
+    threads = os.environ.get("FFMPEG_THREADS", "2")
+
     cmd = [
         "ffmpeg", "-y",
         "-ss", f"{seg_start:.3f}",
@@ -178,7 +188,7 @@ def extract_segment(
         "-t", f"{duration:.3f}",
         "-vf", vf,
         "-af", af,
-        "-c:v", "libx264", "-preset", preset, "-crf", crf,
+        "-c:v", "libx264", "-preset", preset, "-crf", crf, "-threads", threads,
         "-pix_fmt", "yuv420p", "-r", "24",
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
         "-movflags", "+faststart",
