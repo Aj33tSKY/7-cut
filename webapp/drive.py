@@ -16,6 +16,7 @@ on a branch — nothing nests a project inside another project.
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 
 from google.oauth2 import service_account
@@ -29,10 +30,19 @@ MAX_WALK_DEPTH = 6
 
 
 class DriveClient:
-    def __init__(self, service_account_json_path: str):
-        creds = service_account.Credentials.from_service_account_file(
-            service_account_json_path, scopes=SCOPES
-        )
+    def __init__(self, service_account_json: str):
+        """service_account_json is the *contents* of the key file (what you
+        paste into GOOGLE_SERVICE_ACCOUNT_JSON on Railway — there's no
+        filesystem to point a path at). A real file path also works, for
+        local dev where that's more convenient."""
+        stripped = service_account_json.strip()
+        if stripped.startswith("{"):
+            info = json.loads(stripped)
+            creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+        else:
+            creds = service_account.Credentials.from_service_account_file(
+                service_account_json, scopes=SCOPES
+            )
         self._svc = build("drive", "v3", credentials=creds, cache_discovery=False)
 
     def _list_subfolders(self, folder_id: str) -> list[dict]:
