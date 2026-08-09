@@ -34,6 +34,10 @@ Thumbs.db
 # webapp — job workspaces + sqlite db are runtime state, not source
 webapp/data/
 
+# webapp — filled-in copy of the .example template, contains a real OAuth
+# client secret once edited locally
+webapp/get_drive_refresh_token.sh
+
 # Node (rarely needed; nothing in this repo requires it by default)
 node_modules/
 package-lock.json

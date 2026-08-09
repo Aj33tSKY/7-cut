@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# 1. Copy this file:  cp webapp/get_drive_refresh_token.sh.example webapp/get_drive_refresh_token.sh
+# 2. Edit the copy below — paste in the same GOOGLE_OAUTH_CLIENT_ID /
+#    GOOGLE_OAUTH_CLIENT_SECRET already sitting in Railway's Variables tab.
+# 3. Run it:  bash webapp/get_drive_refresh_token.sh
+#
+# The copy (get_drive_refresh_token.sh, without .example) is gitignored —
+# safe to leave your real client secret in it locally, it will never be
+# committed.
+
+GOOGLE_OAUTH_CLIENT_ID="PASTE_YOUR_CLIENT_ID_HERE"
+GOOGLE_OAUTH_CLIENT_SECRET="PASTE_YOUR_CLIENT_SECRET_HERE"
+
+if [[ "$GOOGLE_OAUTH_CLIENT_ID" == "PASTE_YOUR_CLIENT_ID_HERE" ]]; then
+  echo "Edit webapp/get_drive_refresh_token.sh first and paste in your real" >&2
+  echo "GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET (same values as in Railway)." >&2
+  exit 1
+fi
+
+cd "$(dirname "$0")/.."
+GOOGLE_OAUTH_CLIENT_ID="$GOOGLE_OAUTH_CLIENT_ID" \
+GOOGLE_OAUTH_CLIENT_SECRET="$GOOGLE_OAUTH_CLIENT_SECRET" \
+uv run --extra webapp python webapp/get_drive_refresh_token.py
