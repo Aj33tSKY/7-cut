@@ -26,4 +26,10 @@ EXPOSE 8000
 # redirect_uri_mismatch against the https:// one actually registered.
 # Safe to trust unconditionally here — Railway's proxy is the only thing
 # that can reach this container; it's never directly internet-facing.
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
+#
+# Shell form (not exec-form JSON array) so ${PORT:-8000} actually expands:
+# Railway always injects its own PORT and routes/healthchecks against that
+# specific port, whether or not you set one yourself — a hardcoded port
+# here works only by coincidence if it happens to match. Falls back to
+# 8000 for local `docker run` where PORT isn't set.
+CMD uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'
